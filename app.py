@@ -1,4 +1,5 @@
 import os
+import requests
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -38,9 +39,37 @@ def callback():
     return "OK"
 
 
+def search_address(zipcode):
+    """郵便番号APIで郵便番号から住所を取得する"""
+    url = "https://zipcloud.ibsnet.co.jp/api/search"
+    params = {"zipcode": zipcode}
+
+    response = requests.get(url, params=params, timeout=5)
+    response.raise_for_status()
+
+    data = response.json()
+    results = data["results"]
+
+    if results is None:
+        return "該当する住所が見つかりませんでした。"
+
+    address = results[0]
+    return f'{address["address1"]}{address["address2"]}{address["address3"]}'
+
+
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=event.message.text))
+    message = event.message.text.strip()
+
+    if message.isdecimal() and len(message) == 7:
+        try:
+            reply_text = search_address(message)
+        except requests.RequestException:
+            reply_text = "住所検索APIの呼び出しに失敗しました。時間をおいて試してください。"
+    else:
+        reply_text = "郵便番号をハイフンなし7桁で送ってください。\n例: 0287111"
+
+    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
 
 
 if __name__ == "__main__":
